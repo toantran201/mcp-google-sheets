@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ToolDefinition } from './types.js';
+import { CellValue, sanitizeCell } from './sanitize.js';
 
 export const addRows: ToolDefinition = {
   name: 'add_rows',
@@ -8,21 +9,20 @@ export const addRows: ToolDefinition = {
     description: 'Appends rows to the bottom of a sheet tab.',
     inputSchema: z.object({
       sheet_name: z.string().describe('Target sheet tab name'),
-      values: z.array(z.array(z.any())).describe('2D array of rows to append'),
+      values: z.array(z.array(CellValue)).min(1).describe('2D array of rows to append'),
     }),
   },
-  handler: async (args: { sheet_name: string; values: unknown[][] }, sheetsClient, config) => {
+  handler: async (
+    args: { sheet_name: string; values: Array<Array<string | number | boolean | null>> },
+    sheetsClient,
+    config,
+  ) => {
     try {
-      if (args.values.length === 0) {
-        return {
-          content: [{ type: 'text', text: 'Error: values array must not be empty' }],
-          isError: true,
-        };
-      }
+      const sanitizedValues = args.values.map((row) => row.map(sanitizeCell));
 
       const processedValues = config.userName
-        ? args.values.map((row) => [...row, config.userName])
-        : args.values;
+        ? sanitizedValues.map((row) => [...row, config.userName])
+        : sanitizedValues;
 
       const updates = await sheetsClient.addRows(args.sheet_name, processedValues);
 

@@ -23,6 +23,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Fatal error:', err);
+  const message = err instanceof Error ? err.message : 'Unknown error';
+  console.error('Fatal error:', message);
   process.exit(1);
 });

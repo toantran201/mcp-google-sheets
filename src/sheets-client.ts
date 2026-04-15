@@ -1,6 +1,24 @@
 import { google, type sheets_v4 } from 'googleapis';
 import type { Config } from './config.js';
 
+const WRITE_TOOLS = ['create_sheet', 'rename_sheet', 'add_rows', 'update_row'];
+
+function resolveScope(enabledTools: readonly string[] | null): string {
+  const needsWrite =
+    enabledTools === null || enabledTools.some((t) => WRITE_TOOLS.includes(t));
+  return needsWrite
+    ? 'https://www.googleapis.com/auth/spreadsheets'
+    : 'https://www.googleapis.com/auth/spreadsheets.readonly';
+}
+
+/** Quotes a sheet name for A1 notation when it contains special characters. */
+function quoteSheetName(name: string): string {
+  if (/[^A-Za-z0-9_]/.test(name)) {
+    return `'${name.replace(/'/g, "''")}'`;
+  }
+  return name;
+}
+
 export class SheetsClient {
   private sheets: sheets_v4.Sheets;
   private spreadsheetId: string;
@@ -9,7 +27,7 @@ export class SheetsClient {
     const auth = new google.auth.JWT({
       email: config.googleServiceAccountEmail,
       key: config.googlePrivateKey,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      scopes: [resolveScope(config.tools)],
     });
 
     this.sheets = google.sheets({ version: 'v4', auth });
@@ -89,7 +107,7 @@ export class SheetsClient {
   async addRows(sheetName: string, values: unknown[][]) {
     const res = await this.sheets.spreadsheets.values.append({
       spreadsheetId: this.spreadsheetId,
-      range: sheetName,
+      range: quoteSheetName(sheetName),
       valueInputOption: 'USER_ENTERED',
       requestBody: { values },
     });
@@ -98,7 +116,7 @@ export class SheetsClient {
   }
 
   async updateRow(sheetName: string, rowIndex: number, values: unknown[]) {
-    const range = `${sheetName}!A${rowIndex}`;
+    const range = `${quoteSheetName(sheetName)}!A${rowIndex}`;
     const res = await this.sheets.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
       range,

@@ -1,11 +1,11 @@
 import 'dotenv/config';
 
 export interface Config {
-  googleServiceAccountEmail: string;
-  googlePrivateKey: string;
-  spreadsheetId: string;
-  tools: string[] | null;
-  userName: string | null;
+  readonly googleServiceAccountEmail: string;
+  readonly googlePrivateKey: string;
+  readonly spreadsheetId: string;
+  readonly tools: readonly string[] | null;
+  readonly userName: string | null;
 }
 
 const ALL_TOOL_NAMES = [
@@ -76,7 +76,7 @@ export function loadConfig(): Config {
     googleServiceAccountEmail,
     googlePrivateKey,
     spreadsheetId,
-    tools,
+    tools: tools ? Object.freeze(tools) : null,
     userName,
   });
 }

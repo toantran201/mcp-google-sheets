@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ToolDefinition } from './types.js';
+import { CellValue, sanitizeCell } from './sanitize.js';
 
 export const updateRow: ToolDefinition = {
   name: 'update_row',
@@ -9,12 +10,13 @@ export const updateRow: ToolDefinition = {
     inputSchema: z.object({
       sheet_name: z.string().describe('Target sheet tab name'),
       row_index: z.number().int().min(1).describe('1-based row number in the sheet'),
-      values: z.array(z.any()).describe('1D array of values for the row'),
+      values: z.array(CellValue).min(1).describe('1D array of values for the row'),
     }),
   },
-  handler: async (args: { sheet_name: string; row_index: number; values: unknown[] }, sheetsClient) => {
+  handler: async (args: { sheet_name: string; row_index: number; values: Array<string | number | boolean | null> }, sheetsClient) => {
     try {
-      const data = await sheetsClient.updateRow(args.sheet_name, args.row_index, args.values);
+      const sanitizedValues = args.values.map(sanitizeCell);
+      const data = await sheetsClient.updateRow(args.sheet_name, args.row_index, sanitizedValues);
 
       const result = {
         success: true,
