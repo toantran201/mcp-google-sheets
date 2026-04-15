@@ -1,14 +1,14 @@
-import { google, type sheets_v4 } from 'googleapis';
-import type { Config } from './config.js';
+import { google, type sheets_v4 } from "googleapis";
+import type { Config } from "./config.js";
 
-const WRITE_TOOLS = ['create_sheet', 'rename_sheet', 'add_rows', 'update_row'];
+const WRITE_TOOLS = ["create_sheet", "rename_sheet", "add_rows", "update_row"];
 
 function resolveScope(enabledTools: readonly string[] | null): string {
   const needsWrite =
     enabledTools === null || enabledTools.some((t) => WRITE_TOOLS.includes(t));
   return needsWrite
-    ? 'https://www.googleapis.com/auth/spreadsheets'
-    : 'https://www.googleapis.com/auth/spreadsheets.readonly';
+    ? "https://www.googleapis.com/auth/spreadsheets"
+    : "https://www.googleapis.com/auth/spreadsheets.readonly";
 }
 
 /** Quotes a sheet name for A1 notation when it contains special characters. */
@@ -30,14 +30,14 @@ export class SheetsClient {
       scopes: [resolveScope(config.tools)],
     });
 
-    this.sheets = google.sheets({ version: 'v4', auth });
+    this.sheets = google.sheets({ version: "v4", auth });
     this.spreadsheetId = config.spreadsheetId;
   }
 
   async getSpreadsheetInfo() {
     const res = await this.sheets.spreadsheets.get({
       spreadsheetId: this.spreadsheetId,
-      fields: 'properties,sheets.properties',
+      fields: "properties,sheets.properties",
     });
 
     return res.data;
@@ -66,7 +66,7 @@ export class SheetsClient {
   ): Promise<void> {
     let sheetId: number;
 
-    if ('sheetId' in identifier) {
+    if ("sheetId" in identifier) {
       sheetId = identifier.sheetId;
     } else {
       const info = await this.getSpreadsheetInfo();
@@ -86,7 +86,7 @@ export class SheetsClient {
           {
             updateSheetProperties: {
               properties: { sheetId, title: newTitle },
-              fields: 'title',
+              fields: "title",
             },
           },
         ],
@@ -98,7 +98,7 @@ export class SheetsClient {
     const res = await this.sheets.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
       range,
-      valueRenderOption: 'UNFORMATTED_VALUE',
+      valueRenderOption: "UNFORMATTED_VALUE",
     });
 
     return res.data;
@@ -108,7 +108,7 @@ export class SheetsClient {
     const res = await this.sheets.spreadsheets.values.append({
       spreadsheetId: this.spreadsheetId,
       range: quoteSheetName(sheetName),
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: "USER_ENTERED",
       requestBody: { values },
     });
 
@@ -120,10 +120,27 @@ export class SheetsClient {
     const res = await this.sheets.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
       range,
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
     });
 
     return res.data;
+  }
+
+  async getSheetSchema(
+    sheetName: string,
+    headerRow: number,
+    dataRow: number,
+    spreadsheetId?: string,
+  ): Promise<sheets_v4.Schema$Sheet | undefined> {
+    const range = `${quoteSheetName(sheetName)}!${headerRow}:${dataRow}`;
+    const res = await this.sheets.spreadsheets.get({
+      spreadsheetId: spreadsheetId ?? this.spreadsheetId,
+      ranges: [range],
+      fields:
+        "sheets(data(rowData(values(formattedValue,note,dataValidation,effectiveFormat.numberFormat,userEnteredValue.formulaValue))))",
+    });
+
+    return res.data.sheets?.[0];
   }
 }

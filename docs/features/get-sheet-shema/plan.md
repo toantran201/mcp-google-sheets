@@ -11,9 +11,11 @@
 Add the new `getSheetSchema()` method to `src/sheets-client.ts`. This method calls `spreadsheets.get()` with a strict `fields` mask to fetch cell metadata (data validation, notes, number format, formula values) for the header and data rows.
 
 **Files to modify:**
+
 - `src/sheets-client.ts`
 
 **Steps:**
+
 1. Add the `getSheetSchema` method to the `SheetsClient` class.
 2. Use full-row range notation (`SheetName!{headerRow}:{dataRow}`) to cover all columns, including those beyond column Z.
 3. Use the `fields` mask: `sheets(data(rowData(values(formattedValue,note,dataValidation,effectiveFormat.numberFormat,userEnteredValue.formulaValue))))`.
@@ -38,9 +40,11 @@ Add the new `getSheetSchema()` method to `src/sheets-client.ts`. This method cal
 Create `src/tools/get-sheet-schema.ts` with the Zod input schema, tool config, helper types, `buildColumnSchema` function, and the handler logic.
 
 **Files to create:**
+
 - `src/tools/get-sheet-schema.ts`
 
 **Steps:**
+
 1. Define the Zod input schema with `sheet_name` (required), `header_row` (optional, default 1), `data_row` (optional, computed default), and `spreadsheet_id` (optional).
 2. Define the `ColumnSchema` interface: `type`, `allowed_values?`, `is_formula`, `note?`.
 3. Implement `buildColumnSchema(headerCell, dataCell, resolvedRanges)` following the type priority algorithm: data validation → number format → text default.
@@ -88,10 +92,12 @@ Create `src/tools/get-sheet-schema.ts` with the Zod input schema, tool config, h
 Wire `get_sheet_schema` into the tool registry and config so it's discoverable by the MCP server and respects the `TOOLS` filter.
 
 **Files to modify:**
+
 - `src/config.ts`
 - `src/tools/index.ts`
 
 **Steps:**
+
 1. Add `'get_sheet_schema'` to `ALL_TOOL_NAMES` in `src/config.ts`, placed after `'get_spreadsheet_info'`.
 2. Import `getSheetSchema` in `src/tools/index.ts`.
 3. Add `getSheetSchema` to the `allTools` array, placed after `getSpreadsheetInfo`.
@@ -114,10 +120,12 @@ Wire `get_sheet_schema` into the tool registry and config so it's discoverable b
 Test the tool end-to-end against a real Google Sheet with various column types.
 
 **Prerequisites:**
+
 - A Google Sheet shared with the Service Account (Editor or Viewer role)
 - The sheet should have columns with: plain text, dropdowns (`ONE_OF_LIST`), dropdowns (`ONE_OF_RANGE`), checkboxes, dates, numbers, currency, formulas, and header notes
 
 **Steps:**
+
 1. Build the project: `npm run build`.
 2. Test via MCP Inspector or Claude Code.
 3. Verify each column type is detected correctly.
@@ -126,13 +134,16 @@ Test the tool end-to-end against a real Google Sheet with various column types.
 ### Verification Checklist
 
 **Server connectivity:**
+
 - [ ] Server starts with no errors, `get_sheet_schema` appears in the tool list
 
 **Basic schema extraction:**
+
 - [ ] Call with `{ sheet_name: 'Sheet1' }` → returns JSON with all columns from row 1 as keys
 - [ ] Each column has `type`, `is_formula` fields at minimum
 
 **Column type detection:**
+
 - [ ] Column with `ONE_OF_LIST` validation → `type: "dropdown"`, `allowed_values` lists the options
 - [ ] Column with `ONE_OF_RANGE` validation → `type: "dropdown"`, `allowed_values` contains resolved values from the referenced range
 - [ ] Column configured as checkbox → `type: "checkbox"`
@@ -142,16 +153,19 @@ Test the tool end-to-end against a real Google Sheet with various column types.
 - [ ] Column with plain text → `type: "text"`
 
 **Formula & notes:**
+
 - [ ] Column with formula in data row → `is_formula: true`
 - [ ] Column without formula → `is_formula: false`
 - [ ] Header cell with a note → `note` field present in the output
 - [ ] Header cell without a note → no `note` field in the output
 
 **Custom rows:**
+
 - [ ] `{ sheet_name: 'Sheet1', header_row: 3 }` → reads row 3 as headers, row 4 as data
 - [ ] `{ sheet_name: 'Sheet1', header_row: 3, data_row: 10 }` → reads row 3 as headers, row 10 as data
 
 **Edge cases:**
+
 - [ ] Non-existent sheet → returns error, server stays alive
 - [ ] Empty header row → returns descriptive error about using `get_sheet_data` first
 - [ ] `data_row` < `header_row` → returns validation error
@@ -161,9 +175,11 @@ Test the tool end-to-end against a real Google Sheet with various column types.
 - [ ] `spreadsheet_id` override → passing a different spreadsheet ID works (with valid auth)
 
 **TOOLS filtering:**
+
 - [ ] `TOOLS=get_sheet_schema` → only this tool available; other tools not accessible
 - [ ] `TOOLS=get_sheet_data,add_rows` → `get_sheet_schema` not available
 
 **Error resilience:**
+
 - [ ] Unshare the sheet from the service account → tool returns permission error, server stays alive
 - [ ] Re-share the sheet → next call succeeds without server restart
