@@ -20,3 +20,5 @@ Thumbs.db
 
 # Logs
 *.log
+
+.mcp.json

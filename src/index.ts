@@ -1,29 +1,28 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig } from './config.js';
 import { SheetsClient } from './sheets-client.js';
+import { registerAllTools } from './tools/index.js';
 
 async function main() {
   const config = loadConfig();
 
-  console.error('Config loaded successfully:');
-  console.error(JSON.stringify({
-    ...config,
-    googlePrivateKey: config.googlePrivateKey.substring(0, 27) + '...[REDACTED]',
-  }, null, 2));
-
   const sheetsClient = new SheetsClient(config);
 
-  console.error('\nSmoke test — calling getSpreadsheetInfo()...');
-  const info = await sheetsClient.getSpreadsheetInfo();
-  console.error('Spreadsheet title:', info.properties?.title);
-  console.error('Sheets:', info.sheets?.map((s) => ({
-    sheetId: s.properties?.sheetId,
-    title: s.properties?.title,
-    rowCount: s.properties?.gridProperties?.rowCount,
-    columnCount: s.properties?.gridProperties?.columnCount,
-  })));
+  const server = new McpServer({
+    name: 'mcp-google-sheets',
+    version: '1.0.0',
+  });
+
+  registerAllTools(server, sheetsClient, config);
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+
+  console.error('MCP Google Sheets server running on stdio');
 }
 
 main().catch((err) => {
-  console.error('Fatal error:', err.message ?? err);
+  console.error('Fatal error:', err);
   process.exit(1);
 });
