@@ -10,6 +10,7 @@ export interface Config {
 
 const ALL_TOOL_NAMES = [
   'get_spreadsheet_info',
+  'get_sheet_schema',
   'create_sheet',
   'rename_sheet',
   'get_sheet_data',

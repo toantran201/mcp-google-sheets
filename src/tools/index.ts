@@ -3,6 +3,7 @@ import type { SheetsClient } from '../sheets-client.js';
 import type { Config } from '../config.js';
 import type { ToolDefinition } from './types.js';
 import { getSpreadsheetInfo } from './get-spreadsheet-info.js';
+import { getSheetSchema } from './get-sheet-schema.js';
 import { createSheet } from './create-sheet.js';
 import { renameSheet } from './rename-sheet.js';
 import { getSheetData } from './get-sheet-data.js';
@@ -11,6 +12,7 @@ import { updateRow } from './update-row.js';
 
 const allTools: ToolDefinition[] = [
   getSpreadsheetInfo,
+  getSheetSchema,
   createSheet,
   renameSheet,
   getSheetData,
