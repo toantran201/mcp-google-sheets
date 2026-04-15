@@ -114,12 +114,11 @@ Use a **JWT (Service Account)** client — no keyFile, credentials come from env
 ```typescript
 import { google } from 'googleapis';
 
-const auth = new google.auth.JWT(
-  config.googleServiceAccountEmail,
-  undefined,                             // no keyFile
-  config.googlePrivateKey,               // parsed PEM string
-  ['https://www.googleapis.com/auth/spreadsheets']
-);
+const auth = new google.auth.JWT({
+  email: config.googleServiceAccountEmail,
+  key: config.googlePrivateKey,               // parsed PEM string
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+});
 
 const sheets = google.sheets({ version: 'v4', auth });
 ```
