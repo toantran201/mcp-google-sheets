@@ -11,13 +11,13 @@
 
 ```typescript
 const ALL_TOOL_NAMES = [
-  'get_spreadsheet_info',
-  'get_sheet_schema',    // <-- NEW
-  'create_sheet',
-  'rename_sheet',
-  'get_sheet_data',
-  'add_rows',
-  'update_row',
+  "get_spreadsheet_info",
+  "get_sheet_schema", // <-- NEW
+  "create_sheet",
+  "rename_sheet",
+  "get_sheet_data",
+  "add_rows",
+  "update_row",
 ] as const;
 ```
 
@@ -26,15 +26,17 @@ Placed after `get_spreadsheet_info` — both are read-only metadata tools. The `
 ### 2. `src/tools/index.ts` — Import and Registration
 
 Added import:
+
 ```typescript
-import { getSheetSchema } from './get-sheet-schema.js';
+import { getSheetSchema } from "./get-sheet-schema.js";
 ```
 
 Added to `allTools` array after `getSpreadsheetInfo`:
+
 ```typescript
 const allTools: ToolDefinition[] = [
   getSpreadsheetInfo,
-  getSheetSchema,    // <-- NEW
+  getSheetSchema, // <-- NEW
   createSheet,
   renameSheet,
   getSheetData,
