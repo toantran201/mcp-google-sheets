@@ -148,3 +148,6 @@ Thumbs.db
 # Claude Code local settings
 .claude/
 .mcp.json
+
+# Crash dumps
+*.stackdump

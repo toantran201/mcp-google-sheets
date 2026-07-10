@@ -1,31 +1,56 @@
 {
-  "name": "mcp-google-sheets",
+  "name": "@toantran201/mcp-google-sheets",
   "version": "1.0.0",
   "description": "MCP Server for interacting with Google Sheets via AI Agents",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "mcp-google-sheets": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
+    "model-context-protocol",
     "google-sheets",
     "ai-agent"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "toantran201",
+  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^17.4.2",
+    "google-auth-library": "10.5.0",
     "googleapis": "^171.4.0",
+    "open": "^11.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^9.18.0",
     "@types/node": "^25.6.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "prettier": "^3.4.2",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.20.0"
   }
 }
