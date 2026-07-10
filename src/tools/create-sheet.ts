@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './types.js';
+import type { ToolDefinition } from './shared/types.js';
+import { toErrorResult, toJsonResult } from './shared/result.js';
+import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
 export const createSheet: ToolDefinition = {
   name: 'create_sheet',
@@ -7,28 +9,22 @@ export const createSheet: ToolDefinition = {
     title: 'Create Sheet',
     description: 'Creates a new sheet tab in the spreadsheet.',
     inputSchema: z.object({
-      title: z.string().describe('Name for the new sheet tab'),
+      spreadsheet: z.string().min(1).describe(SPREADSHEET_PARAM_DESCRIPTION),
+      title: z.string().min(1).max(100).describe('Name for the new sheet tab'),
     }),
   },
-  handler: async (args: { title: string }, sheetsClient) => {
+  handler: async (args: { spreadsheet: string; title: string }, sheetsClient) => {
     try {
-      const properties = await sheetsClient.createSheet(args.title);
+      const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
+      const properties = await sheetsClient.createSheet(spreadsheetId, args.title);
 
-      const result = {
+      return toJsonResult({
         success: true,
         sheetId: properties?.sheetId,
         title: properties?.title,
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-      };
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        content: [{ type: 'text', text: `Error: ${message}` }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   },
 };

@@ -1,6 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { SheetsClient } from '../sheets-client.js';
-import type { Config } from '../config.js';
+import type { SheetsClient } from '../../sheets-client.js';
+import type { Config } from '../../config.js';
 import type { z } from 'zod';
 
 export interface ToolDefinition {
@@ -14,9 +14,5 @@ export interface ToolDefinition {
       idempotentHint?: boolean;
     };
   };
-  handler: (
-    args: any,
-    sheetsClient: SheetsClient,
-    config: Config,
-  ) => Promise<CallToolResult>;
+  handler: (args: any, sheetsClient: SheetsClient, config: Config) => Promise<CallToolResult>;
 }

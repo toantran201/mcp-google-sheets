@@ -1,21 +1,26 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './types.js';
+import type { ToolDefinition } from './shared/types.js';
+import { toErrorResult, toUntrustedJsonResult } from './shared/result.js';
+import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
 export const getSpreadsheetInfo: ToolDefinition = {
   name: 'get_spreadsheet_info',
   config: {
     title: 'Get Spreadsheet Info',
-    description: 'Returns metadata about the spreadsheet: title, sheet names, IDs, and dimensions.',
-    inputSchema: z.object({}),
+    description: 'Returns metadata about a spreadsheet: title, sheet names, IDs, and dimensions.',
+    inputSchema: z.object({
+      spreadsheet: z.string().min(1).describe(SPREADSHEET_PARAM_DESCRIPTION),
+    }),
     annotations: {
       readOnlyHint: true,
     },
   },
-  handler: async (_args, sheetsClient) => {
+  handler: async (args: { spreadsheet: string }, sheetsClient) => {
     try {
-      const data = await sheetsClient.getSpreadsheetInfo();
+      const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
+      const data = await sheetsClient.getSpreadsheetInfo(spreadsheetId);
 
-      const result = {
+      return toUntrustedJsonResult({
         title: data.properties?.title,
         sheets: data.sheets?.map((s) => ({
           sheetId: s.properties?.sheetId,
@@ -23,17 +28,9 @@ export const getSpreadsheetInfo: ToolDefinition = {
           rowCount: s.properties?.gridProperties?.rowCount,
           columnCount: s.properties?.gridProperties?.columnCount,
         })),
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-      };
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        content: [{ type: 'text', text: `Error: ${message}` }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   },
 };
