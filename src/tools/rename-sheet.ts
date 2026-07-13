@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { toErrorResult, toJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const renameSheet: ToolDefinition = {
+export const renameSheet = defineTool({
   name: 'rename_sheet',
   config: {
     title: 'Rename Sheet',
@@ -22,10 +22,7 @@ export const renameSheet: ToolDefinition = {
         message: 'Either sheet_id or old_title must be provided',
       }),
   },
-  handler: async (
-    args: { spreadsheet: string; sheet_id?: number; old_title?: string; new_title: string },
-    sheetsClient,
-  ) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const identifier =
@@ -42,4 +39,4 @@ export const renameSheet: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { toErrorResult, toUntrustedJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const getSheetData: ToolDefinition = {
+export const getSheetData = defineTool({
   name: 'get_sheet_data',
   config: {
     title: 'Get Sheet Data',
@@ -19,7 +19,7 @@ export const getSheetData: ToolDefinition = {
       readOnlyHint: true,
     },
   },
-  handler: async (args: { spreadsheet: string; range: string }, sheetsClient) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const data = await sheetsClient.getSheetData(spreadsheetId, args.range);
@@ -32,4 +32,4 @@ export const getSheetData: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

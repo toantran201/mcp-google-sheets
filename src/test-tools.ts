@@ -6,9 +6,11 @@
  */
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { z } from 'zod';
 import { loadConfig } from './config.js';
 import { AuthManager } from './auth/auth-manager.js';
 import { SheetsClient } from './sheets-client.js';
+import type { ToolDefinition } from './tools/shared/types.js';
 import { getSpreadsheetInfo } from './tools/get-spreadsheet-info.js';
 import { getSheetData } from './tools/get-sheet-data.js';
 import { createSheet } from './tools/create-sheet.js';
@@ -39,154 +41,132 @@ function log(label: string, result: CallToolResult) {
   console.error('type' in first && first.type === 'text' ? first.text : JSON.stringify(first));
 }
 
+/**
+ * Invokes a tool the way the MCP SDK does: validate raw args against the tool's
+ * inputSchema (applying Zod defaults) before calling the handler. Validation
+ * failures become the standard error result, mirroring the SDK, so this harness
+ * exercises the real code path instead of hand-passing already-defaulted args.
+ */
+async function run<S extends z.ZodType>(
+  tool: ToolDefinition<S>,
+  rawArgs: z.input<S>,
+): Promise<CallToolResult> {
+  const parsed = tool.config.inputSchema.safeParse(rawArgs);
+  if (!parsed.success) {
+    return {
+      content: [{ type: 'text', text: `Error: ${parsed.error.message}` }],
+      isError: true,
+    };
+  }
+  return tool.handler(parsed.data, client, config);
+}
+
 async function main() {
   // 1. get_spreadsheet_info
-  log('get_spreadsheet_info', await getSpreadsheetInfo.handler({ spreadsheet }, client, config));
+  log('get_spreadsheet_info', await run(getSpreadsheetInfo, { spreadsheet }));
 
   // 2. get_sheet_data — read first sheet
-  log(
-    'get_sheet_data (Sheet1)',
-    await getSheetData.handler({ spreadsheet, range: 'Sheet1' }, client, config),
-  );
+  log('get_sheet_data (Sheet1)', await run(getSheetData, { spreadsheet, range: 'Sheet1' }));
 
   // 3. get_sheet_data — error path (non-existent sheet)
   log(
     'get_sheet_data (NoSuchSheet) — expect error',
-    await getSheetData.handler({ spreadsheet, range: 'NoSuchSheet' }, client, config),
+    await run(getSheetData, { spreadsheet, range: 'NoSuchSheet' }),
   );
 
   // 4. invalid spreadsheet reference (expect error)
   log(
     'get_spreadsheet_info (invalid ref) — expect error',
-    await getSpreadsheetInfo.handler({ spreadsheet: 'not a valid ref!' }, client, config),
+    await run(getSpreadsheetInfo, { spreadsheet: 'not a valid ref!' }),
   );
 
   // 5. create_sheet
   const testTab = `TestTab_${Date.now()}`;
-  log(
-    `create_sheet ("${testTab}")`,
-    await createSheet.handler({ spreadsheet, title: testTab }, client, config),
-  );
+  log(`create_sheet ("${testTab}")`, await run(createSheet, { spreadsheet, title: testTab }));
 
   // 6. rename_sheet by old_title
   const renamedTab = `${testTab}_Renamed`;
   log(
     `rename_sheet (old_title → "${renamedTab}")`,
-    await renameSheet.handler(
-      { spreadsheet, old_title: testTab, new_title: renamedTab },
-      client,
-      config,
-    ),
+    await run(renameSheet, { spreadsheet, old_title: testTab, new_title: renamedTab }),
   );
 
   // 7. add_rows
   log(
     `add_rows to "${renamedTab}"`,
-    await addRows.handler(
-      {
-        spreadsheet,
-        sheet_name: renamedTab,
-        values: [
-          ['Alice', 30, 'Hanoi'],
-          ['Bob', 25, 'HCMC'],
-        ],
-      },
-      client,
-      config,
-    ),
+    await run(addRows, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      values: [
+        ['Alice', 30, 'Hanoi'],
+        ['Bob', 25, 'HCMC'],
+      ],
+    }),
   );
 
   // 8. add_rows — empty array (expect validation error)
   log(
     'add_rows empty — expect error',
-    await addRows.handler(
-      {
-        spreadsheet,
-        sheet_name: renamedTab,
-        values: [],
-      },
-      client,
-      config,
-    ),
+    await run(addRows, { spreadsheet, sheet_name: renamedTab, values: [] }),
   );
 
   // 9. update_row — overwrite the whole of row 1 from column A (default start_column)
   log(
     `update_row row 1 in "${renamedTab}"`,
-    await updateRow.handler(
-      {
-        spreadsheet,
-        sheet_name: renamedTab,
-        row_index: 1,
-        values: ['Name', 'Age', 'City'],
-      },
-      client,
-      config,
-    ),
+    await run(updateRow, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      row_index: 1,
+      values: ['Name', 'Age', 'City'],
+    }),
   );
 
   // 9b. update_row — partial write from column B (row 2 col A "Alice" must survive)
   log(
     `update_row row 2 from column B in "${renamedTab}" (start_column=2)`,
-    await updateRow.handler(
-      {
-        spreadsheet,
-        sheet_name: renamedTab,
-        row_index: 2,
-        start_column: 2,
-        values: [31, 'Da Nang'],
-      },
-      client,
-      config,
-    ),
+    await run(updateRow, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      row_index: 2,
+      start_column: 2,
+      values: [31, 'Da Nang'],
+    }),
   );
 
   // 10. add_columns — insert 1 column before column B
   log(
     `add_columns (insert 1 before column B) in "${renamedTab}"`,
-    await addColumns.handler(
-      { spreadsheet, sheet_name: renamedTab, count: 1, start_column: 2 },
-      client,
-      config,
-    ),
+    await run(addColumns, { spreadsheet, sheet_name: renamedTab, count: 1, start_column: 2 }),
   );
 
   // 11. add_columns — append 2 columns at the right edge (no start_column)
   log(
     `add_columns (append 2 at right edge) in "${renamedTab}"`,
-    await addColumns.handler({ spreadsheet, sheet_name: renamedTab, count: 2 }, client, config),
+    await run(addColumns, { spreadsheet, sheet_name: renamedTab, count: 2 }),
   );
 
   // 12. add_columns — non-existent sheet (expect error)
   log(
     'add_columns (NoSuchSheet) — expect error',
-    await addColumns.handler({ spreadsheet, sheet_name: 'NoSuchSheet', count: 1 }, client, config),
+    await run(addColumns, { spreadsheet, sheet_name: 'NoSuchSheet', count: 1 }),
   );
 
   // 12b. delete_rows — delete row 2 (rows below shift up)
   log(
     `delete_rows (row 2, count 1) in "${renamedTab}"`,
-    await deleteRows.handler(
-      { spreadsheet, sheet_name: renamedTab, start_row: 2, count: 1 },
-      client,
-      config,
-    ),
+    await run(deleteRows, { spreadsheet, sheet_name: renamedTab, start_row: 2, count: 1 }),
   );
 
   // 12c. delete_rows — non-existent sheet (expect error)
   log(
     'delete_rows (NoSuchSheet) — expect error',
-    await deleteRows.handler(
-      { spreadsheet, sheet_name: 'NoSuchSheet', start_row: 1 },
-      client,
-      config,
-    ),
+    await run(deleteRows, { spreadsheet, sheet_name: 'NoSuchSheet', start_row: 1 }),
   );
 
   // 13. Verify the data we wrote (old column B data should now sit in column C)
   log(
     `get_sheet_data ("${renamedTab}") — verify writes`,
-    await getSheetData.handler({ spreadsheet, range: renamedTab }, client, config),
+    await run(getSheetData, { spreadsheet, range: renamedTab }),
   );
 
   // ─── get_sheet_schema tests ───
@@ -194,51 +174,31 @@ async function main() {
   // 14. get_sheet_schema — basic (default header_row=1, data_row=2)
   log(
     'get_sheet_schema (Sheet1)',
-    await getSheetSchema.handler(
-      { spreadsheet, sheet_name: 'Sheet1', header_row: 1 },
-      client,
-      config,
-    ),
+    await run(getSheetSchema, { spreadsheet, sheet_name: 'Sheet1', header_row: 1 }),
   );
 
   // 15. get_sheet_schema — custom header_row and data_row
   log(
     'get_sheet_schema (Sheet1, header_row=1, data_row=2)',
-    await getSheetSchema.handler(
-      { spreadsheet, sheet_name: 'Sheet1', header_row: 1, data_row: 2 },
-      client,
-      config,
-    ),
+    await run(getSheetSchema, { spreadsheet, sheet_name: 'Sheet1', header_row: 1, data_row: 2 }),
   );
 
   // 16. get_sheet_schema — data_row < header_row (expect error)
   log(
     'get_sheet_schema (data_row < header_row) — expect error',
-    await getSheetSchema.handler(
-      { spreadsheet, sheet_name: 'Sheet1', header_row: 5, data_row: 3 },
-      client,
-      config,
-    ),
+    await run(getSheetSchema, { spreadsheet, sheet_name: 'Sheet1', header_row: 5, data_row: 3 }),
   );
 
   // 17. get_sheet_schema — non-existent sheet (expect error)
   log(
     'get_sheet_schema (NoSuchSheet) — expect error',
-    await getSheetSchema.handler(
-      { spreadsheet, sheet_name: 'NoSuchSheet', header_row: 1 },
-      client,
-      config,
-    ),
+    await run(getSheetSchema, { spreadsheet, sheet_name: 'NoSuchSheet', header_row: 1 }),
   );
 
   // 18. get_sheet_schema — empty sheet (expect error about empty headers)
   log(
     `get_sheet_schema ("${renamedTab}", row 999) — expect empty header error`,
-    await getSheetSchema.handler(
-      { spreadsheet, sheet_name: renamedTab, header_row: 999 },
-      client,
-      config,
-    ),
+    await run(getSheetSchema, { spreadsheet, sheet_name: renamedTab, header_row: 999 }),
   );
 
   // ─── find_rows tests ───
@@ -246,41 +206,41 @@ async function main() {
   // 19. find_rows — search all columns (contains, case-insensitive)
   log(
     `find_rows (all columns, contains "a") in "${renamedTab}"`,
-    await findRows.handler(
-      { spreadsheet, sheet_name: renamedTab, query: 'a', match: 'contains' },
-      client,
-      config,
-    ),
+    await run(findRows, { spreadsheet, sheet_name: renamedTab, query: 'a', match: 'contains' }),
   );
 
   // 20. find_rows — by column_header, no match expected (count 0)
   log(
     `find_rows (column_header="Name", no match) in "${renamedTab}"`,
-    await findRows.handler(
-      { spreadsheet, sheet_name: renamedTab, column_header: 'Name', query: '__no_such_value__' },
-      client,
-      config,
-    ),
+    await run(findRows, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      column_header: 'Name',
+      query: '__no_such_value__',
+    }),
   );
 
   // 21. find_rows — both column and column_header (expect error)
   log(
     'find_rows (column + column_header) — expect error',
-    await findRows.handler(
-      { spreadsheet, sheet_name: renamedTab, query: 'x', column: 1, column_header: 'Name' },
-      client,
-      config,
-    ),
+    await run(findRows, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      query: 'x',
+      column: 1,
+      column_header: 'Name',
+    }),
   );
 
   // 22. find_rows — non-existent column_header (expect error)
   log(
     'find_rows (unknown column_header) — expect error',
-    await findRows.handler(
-      { spreadsheet, sheet_name: renamedTab, query: 'x', column_header: 'NoSuchHeader' },
-      client,
-      config,
-    ),
+    await run(findRows, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      query: 'x',
+      column_header: 'NoSuchHeader',
+    }),
   );
 
   console.error('\n--- All tests done. Check your Google Sheet to confirm. ---');

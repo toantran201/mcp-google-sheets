@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { toErrorResult, toJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const createSheet: ToolDefinition = {
+export const createSheet = defineTool({
   name: 'create_sheet',
   config: {
     title: 'Create Sheet',
@@ -13,7 +13,7 @@ export const createSheet: ToolDefinition = {
       title: z.string().min(1).max(100).describe('Name for the new sheet tab'),
     }),
   },
-  handler: async (args: { spreadsheet: string; title: string }, sheetsClient) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const properties = await sheetsClient.createSheet(spreadsheetId, args.title);
@@ -27,4 +27,4 @@ export const createSheet: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

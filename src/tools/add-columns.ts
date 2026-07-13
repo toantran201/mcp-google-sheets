@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { toErrorResult, toJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const addColumns: ToolDefinition = {
+export const addColumns = defineTool({
   name: 'add_columns',
   config: {
     title: 'Add Columns',
@@ -24,10 +24,7 @@ export const addColumns: ToolDefinition = {
         ),
     }),
   },
-  handler: async (
-    args: { spreadsheet: string; sheet_name: string; count: number; start_column?: number },
-    sheetsClient,
-  ) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const startIndex = args.start_column === undefined ? undefined : args.start_column - 1;
@@ -50,4 +47,4 @@ export const addColumns: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

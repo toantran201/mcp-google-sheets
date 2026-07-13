@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { CellValue, sanitizeCell } from './shared/sanitize.js';
 import { toErrorResult, toJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const updateRow: ToolDefinition = {
+export const updateRow = defineTool({
   name: 'update_row',
   config: {
     title: 'Update Row',
@@ -29,16 +29,7 @@ export const updateRow: ToolDefinition = {
         .describe('1D array of values written left-to-right starting at `start_column`'),
     }),
   },
-  handler: async (
-    args: {
-      spreadsheet: string;
-      sheet_name: string;
-      row_index: number;
-      start_column?: number;
-      values: Array<string | number | boolean | null>;
-    },
-    sheetsClient,
-  ) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const sanitizedValues = args.values.map(sanitizeCell);
@@ -59,4 +50,4 @@ export const updateRow: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

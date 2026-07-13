@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { toErrorResult, toUntrustedJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const findRows: ToolDefinition = {
+export const findRows = defineTool({
   name: 'find_rows',
   config: {
     title: 'Find Rows',
@@ -57,26 +57,13 @@ export const findRows: ToolDefinition = {
     }),
     annotations: { readOnlyHint: true },
   },
-  handler: async (
-    args: {
-      spreadsheet: string;
-      sheet_name: string;
-      query: string;
-      column?: number;
-      column_header?: string;
-      header_row?: number;
-      match?: 'exact' | 'contains';
-      case_sensitive?: boolean;
-      max_results?: number;
-    },
-    sheetsClient,
-  ) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
-      const headerRow = args.header_row ?? 1;
-      const match = args.match ?? 'exact';
-      const caseSensitive = args.case_sensitive ?? false;
-      const maxResults = args.max_results ?? 50;
+      const headerRow = args.header_row;
+      const match = args.match;
+      const caseSensitive = args.case_sensitive;
+      const maxResults = args.max_results;
 
       if (args.column !== undefined && args.column_header !== undefined) {
         throw new Error('Provide either column or column_header, not both.');
@@ -99,10 +86,9 @@ export const findRows: ToolDefinition = {
               .toLowerCase() === wanted,
         );
         if (idx === -1) {
-          const available = headerCells.map((c) => String(c ?? '')).filter(Boolean);
           throw new Error(
             `Column header "${args.column_header}" not found in row ${headerRow}. ` +
-              `Available headers: ${available.length ? available.join(', ') : '(none)'}.`,
+              'Use get_sheet_data or get_sheet_schema to inspect the available headers.',
           );
         }
         targetCol = idx;
@@ -148,4 +134,4 @@ export const findRows: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

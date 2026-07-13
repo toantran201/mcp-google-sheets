@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { CellValue, sanitizeCell } from './shared/sanitize.js';
 import { toErrorResult, toJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const addRows: ToolDefinition = {
+export const addRows = defineTool({
   name: 'add_rows',
   config: {
     title: 'Add Rows',
@@ -19,15 +19,7 @@ export const addRows: ToolDefinition = {
         .describe('2D array of rows to append'),
     }),
   },
-  handler: async (
-    args: {
-      spreadsheet: string;
-      sheet_name: string;
-      values: Array<Array<string | number | boolean | null>>;
-    },
-    sheetsClient,
-    config,
-  ) => {
+  handler: async (args, sheetsClient, config) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const sanitizedValues = args.values.map((row) => row.map(sanitizeCell));
@@ -57,4 +49,4 @@ export const addRows: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

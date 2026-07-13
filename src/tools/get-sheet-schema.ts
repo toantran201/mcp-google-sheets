@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { sheets_v4 } from 'googleapis';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { toErrorResult, toUntrustedJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
@@ -24,6 +24,15 @@ function describeCondition(
   const type = condition?.type ?? '';
   const vals = (condition?.values ?? []).map((v) => v.userEnteredValue ?? '').filter(Boolean);
   const [v0, v1] = vals;
+
+  // Value-less validation types (IS_EMAIL, IS_URL, IS_VALID_DATE) are handled below.
+  // Every other branch interpolates v0 (and sometimes v1), so bail out if the
+  // condition is missing the value(s) it needs rather than emit "> undefined".
+  const needsOne = type !== 'DATE_IS_VALID' && type !== 'TEXT_IS_EMAIL' && type !== 'TEXT_IS_URL';
+  if (needsOne && v0 === undefined) return undefined;
+  const needsTwo = type.endsWith('_BETWEEN');
+  if (needsTwo && v1 === undefined) return undefined;
+
   switch (type) {
     case 'NUMBER_GREATER':
       return `> ${v0}`;
@@ -217,7 +226,7 @@ function buildColumnSchema(
   return { type: 'text', is_formula: isFormula, ...(note && { note }) };
 }
 
-export const getSheetSchema: ToolDefinition = {
+export const getSheetSchema = defineTool({
   name: 'get_sheet_schema',
   config: {
     title: 'Get Sheet Schema',
@@ -230,16 +239,7 @@ export const getSheetSchema: ToolDefinition = {
       readOnlyHint: true,
     },
   },
-  handler: async (
-    args: {
-      spreadsheet: string;
-      sheet_name: string;
-      header_row: number;
-      data_row?: number;
-    },
-    sheetsClient,
-    _config,
-  ) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const headerRow = args.header_row; // default applied by Zod
@@ -291,11 +291,16 @@ export const getSheetSchema: ToolDefinition = {
         }
       }
 
-      // 6. Batch-resolve all ONE_OF_RANGE references
+      // 6. Batch-resolve all ONE_OF_RANGE references.
+      // Sheets stores the range as a formula, so userEnteredValue round-trips with a
+      // leading '=' (or '+'), e.g. "=Sheet2!A1:A10". values.get wants plain A1
+      // notation, so strip that prefix before the call. Map stays keyed by the raw
+      // ref so buildColumnSchema's lookup still matches.
       const resolvedRanges = new Map<string, string[]>();
       for (const ref of rangeRefs) {
         try {
-          const data = await sheetsClient.getSheetData(spreadsheetId, ref);
+          const a1Range = ref.replace(/^[=+]/, '');
+          const data = await sheetsClient.getSheetData(spreadsheetId, a1Range);
           const values = (data.values ?? [])
             .flat()
             .filter((v): v is string | number => v !== null && v !== undefined && v !== '')
@@ -324,4 +329,4 @@ export const getSheetSchema: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});

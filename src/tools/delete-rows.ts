@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import type { ToolDefinition } from './shared/types.js';
+import { defineTool } from './shared/types.js';
 import { toErrorResult, toJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
-export const deleteRows: ToolDefinition = {
+export const deleteRows = defineTool({
   name: 'delete_rows',
   config: {
     title: 'Delete Rows',
@@ -24,17 +24,14 @@ export const deleteRows: ToolDefinition = {
         .describe('Number of consecutive rows to delete, starting at start_row (default 1)'),
     }),
   },
-  handler: async (
-    args: { spreadsheet: string; sheet_name: string; start_row: number; count?: number },
-    sheetsClient,
-  ) => {
+  handler: async (args, sheetsClient) => {
     try {
       const spreadsheetId = parseSpreadsheetRef(args.spreadsheet);
       const { sheetId, deletedCount, remainingRowCount } = await sheetsClient.deleteRows(
         spreadsheetId,
         args.sheet_name,
         args.start_row,
-        args.count ?? 1,
+        args.count,
       );
       return toJsonResult({
         success: true,
@@ -47,4 +44,4 @@ export const deleteRows: ToolDefinition = {
       return toErrorResult(error);
     }
   },
-};
+});
