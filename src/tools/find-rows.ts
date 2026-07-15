@@ -12,8 +12,9 @@ export const findRows = defineTool({
       'its 1-based sheet row index (feed straight into update_row / delete_rows). Restrict to one ' +
       'column by 1-based `column` index OR by `column_header` name (resolved via header_row); omit ' +
       'both to search every column. Matches the raw unformatted value (numbers/dates by their ' +
-      'underlying value, not displayed text). The header_row is treated as headers and excluded ' +
-      'from matches.',
+      'underlying value, not displayed text). A person chip matches by its email — the same ' +
+      'value get_sheet_data returns — not the displayed name. The header_row is treated as ' +
+      'headers and excluded from matches.',
     inputSchema: z.object({
       spreadsheet: z.string().min(1).describe(SPREADSHEET_PARAM_DESCRIPTION),
       sheet_name: z.string().describe('Target sheet tab name'),
@@ -69,9 +70,21 @@ export const findRows = defineTool({
         throw new Error('Provide either column or column_header, not both.');
       }
 
-      const data = await sheetsClient.getSheetValues(spreadsheetId, args.sheet_name);
+      // Read chip-aware (not the values API) so a person chip matches by email, exactly as
+      // get_sheet_data surfaces it; the values API would render it as display-name text and
+      // never match a query built from what get_sheet_data returned.
+      const data = await sheetsClient.readSheetCells(spreadsheetId, args.sheet_name);
       const rows = data.values ?? [];
       const headerCells = rows[headerRow - 1] ?? [];
+
+      // A chip cell matches on its email (person) or URI (link); scalars stringify as before.
+      const cellText = (c: unknown): string => {
+        if (typeof c === 'object' && c !== null && 'chip' in c) {
+          const chip = (c as { chip: { person?: string; link?: string } }).chip;
+          return chip.person ?? chip.link ?? '';
+        }
+        return String(c ?? '');
+      };
 
       // Resolve target column (0-based) or null = search all columns.
       let targetCol: number | null = null;
@@ -79,12 +92,7 @@ export const findRows = defineTool({
         targetCol = args.column - 1;
       } else if (args.column_header !== undefined) {
         const wanted = args.column_header.trim().toLowerCase();
-        const idx = headerCells.findIndex(
-          (c) =>
-            String(c ?? '')
-              .trim()
-              .toLowerCase() === wanted,
-        );
+        const idx = headerCells.findIndex((c) => cellText(c).trim().toLowerCase() === wanted);
         if (idx === -1) {
           throw new Error(
             `Column header "${args.column_header}" not found in row ${headerRow}. ` +
@@ -95,7 +103,7 @@ export const findRows = defineTool({
       }
 
       const norm = (v: unknown) => {
-        const s = String(v ?? '');
+        const s = cellText(v);
         return caseSensitive ? s : s.toLowerCase();
       };
       const q = norm(args.query);

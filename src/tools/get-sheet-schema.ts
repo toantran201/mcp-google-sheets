@@ -5,12 +5,23 @@ import { toErrorResult, toUntrustedJsonResult } from './shared/result.js';
 import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadsheet-ref.js';
 
 interface ColumnSchema {
-  type: 'dropdown' | 'checkbox' | 'date' | 'currency' | 'number' | 'text';
+  type:
+    'dropdown' | 'person_chip' | 'link_chip' | 'checkbox' | 'date' | 'currency' | 'number' | 'text';
   allowed_values?: string[];
   constraint?: string;
   input_message?: string;
   is_formula: boolean;
   note?: string;
+}
+
+/**
+ * A resolved ONE_OF_RANGE source: the allowed values as strings (emails when the source
+ * cells are person chips), plus whether that source range holds person chips — which makes
+ * the dropdown a person_chip column whose valid entries must be written as person chips.
+ */
+interface ResolvedRange {
+  values: string[];
+  isPersonChip: boolean;
 }
 
 /**
@@ -108,13 +119,20 @@ const inputSchema = z.object({
 function buildColumnSchema(
   headerCell: sheets_v4.Schema$CellData | undefined,
   dataCell: sheets_v4.Schema$CellData | undefined,
-  resolvedRanges: Map<string, string[]>,
+  resolvedRanges: Map<string, ResolvedRange>,
 ): ColumnSchema {
   // --- Formula detection (from data row) ---
   const isFormula = !!dataCell?.userEnteredValue?.formulaValue;
 
   // --- Note (from header cell) ---
   const note = headerCell?.note ?? undefined;
+
+  // --- Smart Chip detection (from the sample data cell) ---
+  // A filled sample cell tells us the column's chip kind directly. Empty cells reveal nothing,
+  // so ONE_OF_RANGE dropdowns fall back to inspecting their source range (below).
+  const sampleChip = dataCell?.chipRuns?.find((run) => run.chip)?.chip;
+  const isPersonCell = !!sampleChip?.personProperties;
+  const isLinkCell = !!sampleChip?.richLinkProperties;
 
   // --- Data validation (prefer data row, fall back to header row) ---
   const dv = dataCell?.dataValidation ?? headerCell?.dataValidation;
@@ -141,12 +159,17 @@ function buildColumnSchema(
     };
   }
 
-  // Priority 1b: ONE_OF_RANGE dropdown (resolved)
+  // Priority 1b: ONE_OF_RANGE dropdown (resolved). When the source range holds person chips —
+  // or the sample cell is already a person chip — the column is a person_chip dropdown whose
+  // valid entries must be written as `{ chip: { person: <email> } }`, and allowed_values are
+  // the source emails.
   if (conditionType === 'ONE_OF_RANGE') {
     const rangeRef = dv!.condition!.values?.[0]?.userEnteredValue ?? '';
-    const allowedValues = resolvedRanges.get(rangeRef) ?? [`<unresolved: ${rangeRef}>`];
+    const resolved = resolvedRanges.get(rangeRef);
+    const allowedValues = resolved?.values ?? [`<unresolved: ${rangeRef}>`];
+    const isPersonDropdown = isPersonCell || !!resolved?.isPersonChip;
     return {
-      type: 'dropdown',
+      type: isPersonDropdown ? 'person_chip' : 'dropdown',
       allowed_values: allowedValues,
       is_formula: isFormula,
       ...dvExtras,
@@ -207,6 +230,14 @@ function buildColumnSchema(
       ...(formula && { constraint: `custom formula: ${formula}` }),
       ...dvExtras,
     };
+  }
+
+  // Priority 1h: Smart Chip column with no data-validation rule (a chipped cell but no dropdown).
+  if (isPersonCell) {
+    return { type: 'person_chip', is_formula: isFormula, ...(note && { note }) };
+  }
+  if (isLinkCell) {
+    return { type: 'link_chip', is_formula: isFormula, ...(note && { note }) };
   }
 
   // Priority 2: Number format detection
@@ -293,21 +324,30 @@ export const getSheetSchema = defineTool({
 
       // 6. Batch-resolve all ONE_OF_RANGE references.
       // Sheets stores the range as a formula, so userEnteredValue round-trips with a
-      // leading '=' (or '+'), e.g. "=Sheet2!A1:A10". values.get wants plain A1
-      // notation, so strip that prefix before the call. Map stays keyed by the raw
-      // ref so buildColumnSchema's lookup still matches.
-      const resolvedRanges = new Map<string, string[]>();
+      // leading '=' (or '+'), e.g. "=Sheet2!A1:A10". readCells wants plain A1 notation, so
+      // strip that prefix. Reading via readCells (not values.get) surfaces person chips, so a
+      // People-backed dropdown resolves to emails — the values you must write back — and is
+      // flagged isPersonChip. Map stays keyed by the raw ref so buildColumnSchema's lookup matches.
+      const resolvedRanges = new Map<string, ResolvedRange>();
       for (const ref of rangeRefs) {
         try {
           const a1Range = ref.replace(/^[=+]/, '');
-          const data = await sheetsClient.getSheetData(spreadsheetId, a1Range);
-          const values = (data.values ?? [])
-            .flat()
-            .filter((v): v is string | number => v !== null && v !== undefined && v !== '')
-            .map(String);
-          resolvedRanges.set(ref, values);
+          const data = await sheetsClient.readCells(spreadsheetId, a1Range);
+          const flat = data.values.flat();
+          const isPersonChip = flat.some(
+            (c) => typeof c === 'object' && c !== null && 'chip' in c && 'person' in c.chip,
+          );
+          const values = flat
+            .map((c) => {
+              if (typeof c === 'object' && c !== null && 'chip' in c) {
+                return 'person' in c.chip ? c.chip.person : c.chip.link;
+              }
+              return c === '' ? null : String(c);
+            })
+            .filter((v): v is string => v !== null);
+          resolvedRanges.set(ref, { values, isPersonChip });
         } catch {
-          resolvedRanges.set(ref, [`<unresolved: ${ref}>`]);
+          resolvedRanges.set(ref, { values: [`<unresolved: ${ref}>`], isPersonChip: false });
         }
       }
 

@@ -169,6 +169,39 @@ async function main() {
     await run(getSheetData, { spreadsheet, range: renamedTab }),
   );
 
+  // 13b. Smart Chip round-trip — exercises the appendCells (add_rows) and updateCells (update_row)
+  // rich write paths plus chip-aware reading. Set TEST_PERSON_EMAIL to a workspace member to run;
+  // skipped otherwise so the harness needs no hardcoded identity. NOTE: a fresh tab has no
+  // ONE_OF_RANGE validation, so this proves chips are *written/read* correctly, not that they
+  // satisfy a People-backed dropdown — verify that against your real sheet with the dropdown.
+  const personEmail = process.env.TEST_PERSON_EMAIL;
+  if (personEmail) {
+    log(
+      `add_rows with a person chip (appendCells path) in "${renamedTab}"`,
+      await run(addRows, {
+        spreadsheet,
+        sheet_name: renamedTab,
+        values: [['ChipRow', { chip: { person: personEmail } }, 'note']],
+      }),
+    );
+    log(
+      `update_row writing a person chip at column E of row 1 (updateCells path) in "${renamedTab}"`,
+      await run(updateRow, {
+        spreadsheet,
+        sheet_name: renamedTab,
+        row_index: 1,
+        start_column: 5,
+        values: [{ chip: { person: personEmail } }],
+      }),
+    );
+    log(
+      `get_sheet_data ("${renamedTab}") — expect { chip: { person } } round-trip`,
+      await run(getSheetData, { spreadsheet, range: renamedTab }),
+    );
+  } else {
+    console.error('\n[SKIP] Smart Chip round-trip — set TEST_PERSON_EMAIL to run it.');
+  }
+
   // ─── get_sheet_schema tests ───
 
   // 14. get_sheet_schema — basic (default header_row=1, data_row=2)

@@ -60,9 +60,26 @@ The `TOOLS` env var filters which tools register (blank = all). `registerAllTool
 - Handlers are `async (args, sheetsClient, config) => CallToolResult`. Wrap the body in try/catch and on error return `{ content: [{ type: 'text', text: 'Error: ...' }], isError: true }` rather than throwing — the same shape all tools use.
 - Every tool schema includes `spreadsheet: z.string().min(1).describe(SPREADSHEET_PARAM_DESCRIPTION)`. Handlers call `parseSpreadsheetRef(args.spreadsheet)` inside the try/catch (so bad refs return the standard error shape) and pass the ID as the first argument to every `SheetsClient` method — including secondary calls (see the ONE_OF_RANGE resolution in `get-sheet-schema.ts`).
 - Success returns JSON stringified into a single text content block.
-- All cell writes pass through `sanitizeCell` (`tools/shared/sanitize.ts`), which prefixes formula-triggering strings (`=`, `+`, `-`, `@`) with `'` to prevent CSV/formula injection. Any new write tool must sanitize user-supplied cell values.
+- Cell writes are sanitized against CSV/formula injection by `sanitizeCell` (`tools/shared/sanitize.ts`), which prefixes formula-triggering strings (`=`, `+`, `-`, `@`) with `'`. Sanitization now lives **inside `SheetsClient`** (`updateRow`/`addRows`), applied per write path — the values-API (USER_ENTERED) path prefixes strings; the chip path (`updateCells`/`appendCells`) writes strings as literal `stringValue`, which never evaluates, so no prefix is needed. Tools pass **raw** `CellValue`s down; don't re-sanitize in a handler.
 - `add_rows` appends `config.userName` as a trailing column when `USER_NAME` is set (audit trail).
 - Sheet names with special characters must be quoted for A1 notation — `sheets-client.ts` has `quoteSheetName()` for this.
+
+### Smart Chips (person / rich-link cells)
+
+Some columns hold **Smart Chips** — structured cell content, not text. The common case is a **People chip** (a person, keyed by email), often behind a dropdown whose `ONE_OF_RANGE` source cells are themselves person chips. The `values` API can only read/write plain scalars, so writing text into such a column fails dropdown validation (*"Input must fall within specified range"*). Chips require the `updateCells`/`appendCells` grid API with `chipRuns`.
+
+Rather than a tool per chip type, one **polymorphic `CellValue`** (`tools/shared/sanitize.ts`) carries both scalars and chips through every write tool:
+- Scalar: `string | number | boolean | null` (unchanged).
+- Chip: `{ chip: { person: "a@x.io" } }` (person) or `{ chip: { driveFile: "https://drive…" } }` (Drive-file rich link).
+
+The API only *writes* two chip kinds — **person** and **Drive-file** rich links (Drive needs a Drive OAuth scope; person needs only Sheets). Every other rich link (Maps/Place, Calendar, YouTube) and Finance/Rating chips are **read-only on Google's side** — no tool can write them.
+
+Flow through `SheetsClient`:
+- **Write** (`updateRow`/`addRows`): if any cell `isChipCell`, the whole row/batch routes to `updateCells` (update) / `appendCells` (append) via `toCellData()` (a chip → `stringValue:"@"` + one `chipRuns` entry); `fields:"userEnteredValue,chipRuns"` preserves the cell's `dataValidation`. Otherwise the faster scalar values-API path is kept. Consequence: in a chip-containing row, scalar strings are written literally (no USER_ENTERED auto-typing), so pass numbers/booleans as JSON types.
+- **Read** (`readCells`, used by `get_sheet_data` and the schema's ONE_OF_RANGE resolution): `spreadsheets.get` with `chipRuns`; a person chip surfaces as `{ chip: { person: email } }` (round-trips straight back to a write), any other rich link as `{ chip: { link: uri } }` (read-only).
+- **Discovery**: `get_sheet_schema` labels chip columns `person_chip` / `link_chip` and resolves a People-backed `ONE_OF_RANGE` dropdown's `allowed_values` to the source **emails** — so an agent knows to write `{ chip: { person } }` there instead of text. Always the first call before writing such a column.
+
+No new tool names, `WRITE_TOOLS`, or `ALL_TOOL_NAMES` entries are involved — chips ride the existing `add_rows`/`update_row`/`get_sheet_data`/`get_sheet_schema`. `test-tools.ts` exercises the write/read round-trip when `TEST_PERSON_EMAIL` is set (a fresh tab has no dropdown, so validation-pass must be verified against a real People-backed sheet).
 
 ### ESM import rule
 
