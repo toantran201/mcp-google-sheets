@@ -13,7 +13,8 @@ export const findRows = defineTool({
       'column by 1-based `column` index OR by `column_header` name (resolved via header_row); omit ' +
       'both to search every column. Matches the raw unformatted value (numbers/dates by their ' +
       'underlying value, not displayed text). A person chip matches by its email — the same ' +
-      'value get_sheet_data returns — not the displayed name. The header_row is treated as ' +
+      'value get_sheet_data returns — not the displayed name. A hyperlinked cell matches by its ' +
+      'displayed text, not its URL. The header_row is treated as ' +
       'headers and excluded from matches.',
     inputSchema: z.object({
       spreadsheet: z.string().min(1).describe(SPREADSHEET_PARAM_DESCRIPTION),
@@ -77,8 +78,12 @@ export const findRows = defineTool({
       const rows = data.values ?? [];
       const headerCells = rows[headerRow - 1] ?? [];
 
-      // A chip cell matches on its email (person) or URI (link); scalars stringify as before.
+      // A chip cell matches on its email (person) or URI (link), a hyperlinked cell on its
+      // displayed text; scalars stringify as before.
       const cellText = (c: unknown): string => {
+        if (typeof c === 'object' && c !== null && 'richText' in c) {
+          return (c as { richText: Array<{ text: string }> }).richText.map((s) => s.text).join('');
+        }
         if (typeof c === 'object' && c !== null && 'chip' in c) {
           const chip = (c as { chip: { person?: string; link?: string } }).chip;
           return chip.person ?? chip.link ?? '';

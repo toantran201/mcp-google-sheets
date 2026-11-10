@@ -169,6 +169,39 @@ async function main() {
     await run(getSheetData, { spreadsheet, range: renamedTab }),
   );
 
+  // 13a. Hyperlink round-trip — a whole-cell link via add_rows (appendCells) and a multi-link
+  // cell via update_row (updateCells); get_sheet_data should return the same richText objects.
+  log(
+    `add_rows with a hyperlink cell in "${renamedTab}"`,
+    await run(addRows, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      values: [['LinkRow', { richText: [{ text: 'Example', url: 'https://example.com/' }] }]],
+    }),
+  );
+  log(
+    `update_row writing two links at column F of row 1 in "${renamedTab}"`,
+    await run(updateRow, {
+      spreadsheet,
+      sheet_name: renamedTab,
+      row_index: 1,
+      start_column: 6,
+      values: [
+        {
+          richText: [
+            { text: 'PR', url: 'https://example.com/1' },
+            { text: ', ' },
+            { text: 'PR', url: 'https://example.com/2' },
+          ],
+        },
+      ],
+    }),
+  );
+  log(
+    `get_sheet_data ("${renamedTab}") — expect { richText } round-trip`,
+    await run(getSheetData, { spreadsheet, range: renamedTab }),
+  );
+
   // 13b. Smart Chip round-trip — exercises the appendCells (add_rows) and updateCells (update_row)
   // rich write paths plus chip-aware reading. Set TEST_PERSON_EMAIL to a workspace member to run;
   // skipped otherwise so the harness needs no hardcoded identity. NOTE: a fresh tab has no

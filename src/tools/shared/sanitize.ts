@@ -19,10 +19,37 @@ export const ChipCellValue = z
 export type ChipCellValue = z.infer<typeof ChipCellValue>;
 
 /**
+ * A text cell carrying hyperlinks (Insert → Link), as ordered segments. A segment with `url`
+ * is a clickable link showing `text`; one without is plain text between links:
+ *   - whole-cell link   → { richText: [{ text: 'DRM-5313', url: 'https://…' }] }
+ *   - several links     → { richText: [{ text: 'PR', url: 'https://…/1' }, { text: ', ' },
+ *                                      { text: 'PR', url: 'https://…/2' }] }
+ */
+export const RichTextCellValue = z
+  .object({
+    richText: z
+      .array(
+        z
+          .object({
+            text: z.string().min(1).max(50_000),
+            url: z.string().min(1).max(2000).optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(200)
+      .refine((segments) => segments.reduce((n, s) => n + s.text.length, 0) <= 50_000, {
+        message: 'Combined segment text exceeds the 50,000-character cell limit',
+      }),
+  })
+  .strict();
+export type RichTextCellValue = z.infer<typeof RichTextCellValue>;
+
+/**
  * Zod schema for a single Google Sheets cell value: a scalar (strings capped at the 50k
- * Sheets cell limit), or a Smart Chip object. The object form is the generic escape hatch
- * for any structured cell content — new writable chip kinds are added to {@link ChipCellValue},
- * never as a new tool.
+ * Sheets cell limit), a Smart Chip object, or a hyperlinked rich-text object. The object form
+ * is the generic escape hatch for any structured cell content — new writable kinds are added
+ * here, never as a new tool.
  */
 export const CellValue = z.union([
   z.string().max(50_000),
@@ -30,12 +57,26 @@ export const CellValue = z.union([
   z.boolean(),
   z.null(),
   ChipCellValue,
+  RichTextCellValue,
 ]);
 export type CellValue = z.infer<typeof CellValue>;
 
 /** True when a cell value is a Smart Chip object rather than a scalar. */
 export function isChipCell(value: CellValue): value is ChipCellValue {
   return typeof value === 'object' && value !== null && 'chip' in value;
+}
+
+/** True when a cell value is a hyperlinked rich-text object. */
+export function isRichTextCell(value: CellValue): value is RichTextCellValue {
+  return typeof value === 'object' && value !== null && 'richText' in value;
+}
+
+/**
+ * True when a cell value is structured (chip or rich text) and so cannot go through the
+ * values API — it must be written via the updateCells/appendCells grid path.
+ */
+export function isStructuredCell(value: CellValue): value is ChipCellValue | RichTextCellValue {
+  return typeof value === 'object' && value !== null;
 }
 
 /**

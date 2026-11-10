@@ -16,7 +16,11 @@ export const updateRow = defineTool({
       'object instead of a string: `{ "chip": { "person": "user@example.com" } }` for a person ' +
       'chip, or `{ "chip": { "driveFile": "https://drive.google.com/…" } }` for a Drive-file chip. ' +
       'Call get_sheet_schema first — columns typed `person_chip`/`link_chip` require this form, and ' +
-      'plain text there fails dropdown validation.',
+      'plain text there fails dropdown validation. ' +
+      'To write a hyperlink (text that opens a URL), pass ' +
+      '`{ "richText": [{ "text": "DRM-5313", "url": "https://…" }] }`; for several links in one ' +
+      'cell add more segments, with url-less segments as the plain text between them, e.g. ' +
+      '`[{ "text": "PR", "url": "…" }, { "text": ", " }, { "text": "PR", "url": "…" }]`.',
     inputSchema: z.object({
       spreadsheet: z.string().min(1).describe(SPREADSHEET_PARAM_DESCRIPTION),
       sheet_name: z.string().describe('Target sheet tab name'),
@@ -33,7 +37,8 @@ export const updateRow = defineTool({
         .max(256)
         .describe(
           'Values written left-to-right starting at `start_column`. Each element is a scalar ' +
-            '(string/number/boolean/null) or a Smart Chip object `{ chip: { person } | { driveFile } }`.',
+            '(string/number/boolean/null), a Smart Chip object `{ chip: { person } | { driveFile } }`, ' +
+            'or a hyperlink object `{ richText: [{ text, url? }] }`.',
         ),
     }),
   },

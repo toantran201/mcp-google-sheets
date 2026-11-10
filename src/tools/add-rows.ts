@@ -12,7 +12,9 @@ export const addRows = defineTool({
       'Appends rows to the bottom of a sheet tab. A cell may be a scalar or a Smart Chip object — ' +
       '`{ "chip": { "person": "user@example.com" } }` (person chip) or ' +
       '`{ "chip": { "driveFile": "https://drive.google.com/…" } }` (Drive-file chip) — for ' +
-      'columns typed `person_chip`/`link_chip` in get_sheet_schema, where plain text fails validation.',
+      'columns typed `person_chip`/`link_chip` in get_sheet_schema, where plain text fails validation. ' +
+      'A cell may also be a hyperlink: `{ "richText": [{ "text": "DRM-5313", "url": "https://…" }] }` ' +
+      '(add more segments for several links in one cell; a segment without `url` is plain text).',
     inputSchema: z.object({
       spreadsheet: z.string().min(1).describe(SPREADSHEET_PARAM_DESCRIPTION),
       sheet_name: z.string().describe('Target sheet tab name'),
@@ -21,8 +23,8 @@ export const addRows = defineTool({
         .min(1)
         .max(1000)
         .describe(
-          '2D array of rows to append. Each cell is a scalar or a Smart Chip object ' +
-            '`{ chip: { person } | { driveFile } }`.',
+          '2D array of rows to append. Each cell is a scalar, a Smart Chip object ' +
+            '`{ chip: { person } | { driveFile } }`, or a hyperlink object `{ richText: [{ text, url? }] }`.',
         ),
     }),
   },

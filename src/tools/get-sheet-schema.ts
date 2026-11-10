@@ -6,7 +6,15 @@ import { SPREADSHEET_PARAM_DESCRIPTION, parseSpreadsheetRef } from '../spreadshe
 
 interface ColumnSchema {
   type:
-    'dropdown' | 'person_chip' | 'link_chip' | 'checkbox' | 'date' | 'currency' | 'number' | 'text';
+    | 'dropdown'
+    | 'person_chip'
+    | 'link_chip'
+    | 'link'
+    | 'checkbox'
+    | 'date'
+    | 'currency'
+    | 'number'
+    | 'text';
   allowed_values?: string[];
   constraint?: string;
   input_message?: string;
@@ -240,6 +248,15 @@ function buildColumnSchema(
     return { type: 'link_chip', is_formula: isFormula, ...(note && { note }) };
   }
 
+  // Priority 1i: hyperlinked text (Insert → Link) — written as `{ richText: [{ text, url }] }`.
+  // A bare auto-linked URL (text === hyperlink) is just text.
+  const hasLink =
+    !!dataCell?.textFormatRuns?.some((run) => run.format?.link?.uri) ||
+    (!!dataCell?.hyperlink && dataCell.hyperlink !== dataCell.formattedValue);
+  if (hasLink) {
+    return { type: 'link', is_formula: isFormula, ...(note && { note }) };
+  }
+
   // Priority 2: Number format detection
   const numFmt = dataCell?.effectiveFormat?.numberFormat?.type;
 
@@ -263,8 +280,10 @@ export const getSheetSchema = defineTool({
     title: 'Get Sheet Schema',
     description:
       'Returns the structural schema of a sheet tab: column names, dropdown options, ' +
-      'checkboxes, data types (date/number/currency), formula-protected fields, and ' +
-      'instructional notes. Use this before write operations to understand column constraints.',
+      'checkboxes, data types (date/number/currency), Smart Chip columns (`person_chip`/`link_chip`), ' +
+      'hyperlinked-text columns (`link` — write as `{ "richText": [{ "text", "url" }] }`), ' +
+      'formula-protected fields, and instructional notes. Use this before write operations to ' +
+      'understand column constraints.',
     inputSchema,
     annotations: {
       readOnlyHint: true,
@@ -339,7 +358,8 @@ export const getSheetSchema = defineTool({
           );
           const values = flat
             .map((c) => {
-              if (typeof c === 'object' && c !== null && 'chip' in c) {
+              if (typeof c === 'object' && c !== null) {
+                if ('richText' in c) return c.richText.map((s) => s.text).join('');
                 return 'person' in c.chip ? c.chip.person : c.chip.link;
               }
               return c === '' ? null : String(c);

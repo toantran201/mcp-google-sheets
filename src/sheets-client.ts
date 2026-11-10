@@ -1,17 +1,46 @@
 import { google, type sheets_v4 } from 'googleapis';
 import type { AuthManager } from './auth/auth-manager.js';
-import { type CellValue, isChipCell, sanitizeCell } from './tools/shared/sanitize.js';
+import {
+  type CellValue,
+  type RichTextCellValue,
+  isChipCell,
+  isRichTextCell,
+  isStructuredCell,
+  sanitizeCell,
+} from './tools/shared/sanitize.js';
 
 /**
- * A cell as read back from the sheet: a scalar, or a Smart Chip surfaced structurally.
- * Person chips round-trip exactly to {@link CellValue} on write; `link` chips (any
- * non-person rich link) are read-only, so they come back generically as a URI.
+ * A cell as read back from the sheet: a scalar, a Smart Chip, or hyperlinked rich text.
+ * Person chips and rich text round-trip exactly to {@link CellValue} on write; `link` chips
+ * (any non-person rich link) are read-only, so they come back generically as a URI.
  */
 export type CellReadValue =
-  string | number | boolean | { chip: { person: string } } | { chip: { link: string } };
+  | string
+  | number
+  | boolean
+  | { chip: { person: string } }
+  | { chip: { link: string } }
+  | RichTextCellValue;
 
-/** Builds a Sheets CellData for the updateCells/appendCells (chip) write path. */
+/** Field mask for the grid write path: replaces the value and any chips/links, keeps validation. */
+const RICH_WRITE_FIELDS = 'userEnteredValue,chipRuns,textFormatRuns';
+
+/** Builds a Sheets CellData for the updateCells/appendCells (structured) write path. */
 function toCellData(value: CellValue): sheets_v4.Schema$CellData {
+  if (isRichTextCell(value)) {
+    // Each segment starts a format run at its UTF-16 offset; a link-less segment gets an
+    // empty format so the previous segment's link does not bleed into it.
+    let text = '';
+    const textFormatRuns: sheets_v4.Schema$TextFormatRun[] = [];
+    for (const segment of value.richText) {
+      textFormatRuns.push({
+        startIndex: text.length,
+        format: segment.url ? { link: { uri: segment.url } } : {},
+      });
+      text += segment.text;
+    }
+    return { userEnteredValue: { stringValue: text }, textFormatRuns };
+  }
   if (isChipCell(value)) {
     const chip: sheets_v4.Schema$Chip =
       'person' in value.chip
@@ -28,11 +57,48 @@ function toCellData(value: CellValue): sheets_v4.Schema$CellData {
   return { userEnteredValue: { stringValue: value } };
 }
 
+/**
+ * Returns a cell's hyperlinks as rich-text segments, or null when it has none. Links on part
+ * of the text live in `textFormatRuns`; a link on the whole cell (or a HYPERLINK formula)
+ * surfaces only as `hyperlink`. A bare URL that Sheets auto-linked stays a plain string.
+ */
+function linkSegments(cell: sheets_v4.Schema$CellData): RichTextCellValue['richText'] | null {
+  const text = cell.effectiveValue?.stringValue ?? cell.formattedValue ?? '';
+  if (!text) return null;
+
+  const runs = cell.textFormatRuns ?? [];
+  if (runs.some((run) => run.format?.link?.uri)) {
+    const segments: RichTextCellValue['richText'] = [];
+    const push = (from: number, to: number, url: string | undefined) => {
+      if (to <= from) return;
+      const last = segments[segments.length - 1];
+      // Runs also split on bold/colour changes; merge neighbours that share the same link.
+      if (last && last.url === url) last.text += text.slice(from, to);
+      else segments.push({ text: text.slice(from, to), ...(url && { url }) });
+    };
+    push(0, runs[0]?.startIndex ?? 0, undefined);
+    runs.forEach((run, i) =>
+      push(
+        run.startIndex ?? 0,
+        runs[i + 1]?.startIndex ?? text.length,
+        run.format?.link?.uri ?? undefined,
+      ),
+    );
+    return segments;
+  }
+
+  if (cell.hyperlink && cell.hyperlink !== text) return [{ text, url: cell.hyperlink }];
+  return null;
+}
+
 /** Extracts a structured read value from a cell's grid data. */
 function fromCellData(cell: sheets_v4.Schema$CellData | undefined): CellReadValue {
   const chip = cell?.chipRuns?.find((run) => run.chip)?.chip;
   if (chip?.personProperties?.email) return { chip: { person: chip.personProperties.email } };
   if (chip?.richLinkProperties?.uri) return { chip: { link: chip.richLinkProperties.uri } };
+
+  const richText = cell && linkSegments(cell);
+  if (richText) return { richText };
 
   const ev = cell?.effectiveValue;
   if (ev) {
@@ -204,9 +270,9 @@ export class SheetsClient {
     sheetName: string,
     values: CellValue[][],
   ): Promise<{ updatedRange?: string | null; updatedRows?: number | null }> {
-    // Any chip in the batch forces the whole append onto appendCells (the values API cannot
-    // write chips). A fully-scalar batch keeps the faster USER_ENTERED values.append path.
-    if (values.some((row) => row.some(isChipCell))) {
+    // Any chip or rich-text cell in the batch forces the whole append onto appendCells (the
+    // values API cannot write them). A fully-scalar batch keeps the faster values.append path.
+    if (values.some((row) => row.some(isStructuredCell))) {
       return this.addRowsRich(spreadsheetId, sheetName, values);
     }
 
@@ -235,7 +301,7 @@ export class SheetsClient {
       api.spreadsheets.batchUpdate({
         spreadsheetId,
         requestBody: {
-          requests: [{ appendCells: { sheetId, rows, fields: 'userEnteredValue,chipRuns' } }],
+          requests: [{ appendCells: { sheetId, rows, fields: RICH_WRITE_FIELDS } }],
         },
       }),
     );
@@ -286,9 +352,9 @@ export class SheetsClient {
     values: CellValue[],
     startColumn = 1,
   ): Promise<{ updatedRange?: string | null; updatedCells?: number | null }> {
-    // A chip anywhere in the row routes the whole slice through updateCells (the values API
-    // cannot write chips). A fully-scalar row keeps the faster USER_ENTERED values.update path.
-    if (values.some(isChipCell)) {
+    // A chip or rich-text cell anywhere in the row routes the whole slice through updateCells
+    // (the values API cannot write them). A fully-scalar row keeps the faster values.update path.
+    if (values.some(isStructuredCell)) {
       return this.updateRowRich(spreadsheetId, sheetName, rowIndex, values, startColumn);
     }
 
@@ -322,7 +388,7 @@ export class SheetsClient {
     // separate updateCells anchored at its own column; `start` (not `range`) writes only the
     // cells we supply and the field mask omits dataValidation, preserving dropdown rules.
     const requests: sheets_v4.Schema$Request[] = [];
-    for (let i = 0; i < values.length; ) {
+    for (let i = 0; i < values.length;) {
       if (values[i] === null) {
         i++;
         continue;
@@ -333,7 +399,7 @@ export class SheetsClient {
         updateCells: {
           start: { sheetId, rowIndex: rowIndex - 1, columnIndex: startColumn - 1 + runStart },
           rows: [{ values: values.slice(runStart, i).map(toCellData) }],
-          fields: 'userEnteredValue,chipRuns',
+          fields: RICH_WRITE_FIELDS,
         },
       });
     }
@@ -380,7 +446,8 @@ export class SheetsClient {
       const res = await api.spreadsheets.get({
         spreadsheetId,
         ranges: [usedRange],
-        fields: 'sheets(data(rowData(values(effectiveValue,formattedValue,chipRuns))))',
+        fields:
+          'sheets(data(rowData(values(effectiveValue,formattedValue,chipRuns,hyperlink,textFormatRuns))))',
       });
 
       const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData ?? [];
@@ -446,7 +513,7 @@ export class SheetsClient {
         spreadsheetId,
         ranges: [range],
         fields:
-          'sheets(data(rowData(values(formattedValue,note,dataValidation,effectiveFormat.numberFormat,userEnteredValue.formulaValue,chipRuns))))',
+          'sheets(data(rowData(values(formattedValue,note,dataValidation,effectiveFormat.numberFormat,userEnteredValue.formulaValue,chipRuns,hyperlink,textFormatRuns.format.link))))',
       });
       return res.data.sheets?.[0];
     });
