@@ -1,6 +1,6 @@
 {
   "name": "@toantran201/mcp-google-sheets",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP Server for interacting with Google Sheets via AI Agents",
   "type": "module",
   "main": "dist/index.js",
